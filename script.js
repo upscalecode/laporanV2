@@ -755,7 +755,9 @@
         return false;
       }
     }
-    return /^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec(?:\?.*)?$/i.test(url);
+    return /^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec(?:\?.*)?$/i.test(
+      url,
+    );
   }
 
   function getWebhookUrl() {
@@ -12630,3 +12632,5 @@
       initAppPage();
     });
 })();
+
+// HALO BOSSSS SAYA SUDAH BERUBAH
