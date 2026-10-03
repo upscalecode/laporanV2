@@ -9,7 +9,21 @@ import { getAdjustments, getApd, getDowntime, getEntries, getMaster, getSettings
 
 const app = express();
 const allowedOrigins = String(process.env.CORS_ORIGIN || '').split(',').map(x => x.trim()).filter(Boolean);
-app.use(cors({ origin: allowedOrigins.length ? allowedOrigins : true }));
+const isAllowedOrigin = origin => {
+  // Requests without an Origin header (curl/server-to-server) are safe here.
+  if (!origin) return true;
+  if (allowedOrigins.includes(origin)) return true;
+
+  // During local development, VS Code Live Server may move from 5500 to
+  // another free port. Keep this limited to loopback hosts only.
+  try {
+    const url = new URL(origin);
+    return ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  } catch {
+    return false;
+  }
+};
+app.use(cors({ origin: (origin, callback) => callback(null, isAllowedOrigin(origin)) }));
 app.use(express.urlencoded({ extended: false, limit: '12mb' }));
 app.use(express.json({ limit: '12mb' }));
 
@@ -47,6 +61,27 @@ async function canonical(category, value) {
   const { rows } = await pool.query('SELECT value FROM master_values WHERE category=$1 AND lower(value)=lower($2)', [category, text]);
   if (!rows[0]) throw new Error(`${category} "${text}" tidak tersedia di Master.`);
   return rows[0].value;
+}
+
+// Import SPK boleh membawa Produk/Botol baru. Buat nilai master tersebut di
+// transaksi yang sama supaya SPK tidak pernah tersimpan tanpa master-nya.
+async function canonicalOrCreateMaster(client, category, value) {
+  const text = String(value || '').trim();
+  if (!text) throw new Error(`${category} tidak boleh kosong.`);
+  const { rows } = await client.query(
+    'SELECT value FROM master_values WHERE category=$1 AND lower(value)=lower($2)',
+    [category, text],
+  );
+  if (rows[0]) return rows[0].value;
+  await client.query(
+    'INSERT INTO master_values(category,value,position) VALUES($1,$2,(SELECT COALESCE(max(position),0)+1 FROM master_values WHERE category=$1)) ON CONFLICT DO NOTHING',
+    [category, text],
+  );
+  const created = await client.query(
+    'SELECT value FROM master_values WHERE category=$1 AND lower(value)=lower($2)',
+    [category, text],
+  );
+  return created.rows[0]?.value || text;
 }
 
 async function validateEntry(raw) {
@@ -130,7 +165,7 @@ app.all('/api', wrap(async req => {
 
   if (action === 'spk.create' || action === 'spk.batchCreate') {
     requireLevel(user,'spk','write'); const list=action.endsWith('batchCreate')?jsonParam(p.data,[]):[jsonParam(p.data,{})]; const saved=[];
-    await transaction(async client => { for (const raw of list) { const produk=await canonical('produk',raw.produk), botol=await canonical('botol',raw.botol), dus=Math.floor(num(raw.produksiDus)), per=Math.floor(num(raw.qtyPerDus)); if(dus<=0||per<=0) throw new Error('Produksi dan Qty/Dus harus lebih dari 0.'); const today=new Date().toISOString().slice(0,10); let batch=String(raw.batchNo||''); if(!batch){const {rows}=await client.query("SELECT batch_no FROM spk WHERE tanggal=$1 ORDER BY batch_no DESC LIMIT 1",[today]); const next=(Number(rows[0]?.batch_no?.slice(0,2))||0)+1; batch=`${String(next).padStart(2,'0')}-${today.slice(8,10)}${today.slice(5,7)}${today.slice(0,4)}`;} await client.query('INSERT INTO spk(batch_no,tanggal,produk,botol,produksi_dus,qty_per_dus,qty,created_by,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)',[batch,today,produk,botol,dus,per,dus*per,user.username,raw.status||'normal']); saved.push(batch); }});
+    await transaction(async client => { for (const raw of list) { const produk=await canonicalOrCreateMaster(client,'produk',raw.produk), botol=await canonicalOrCreateMaster(client,'botol',raw.botol), dus=Math.floor(num(raw.produksiDus)), per=Math.floor(num(raw.qtyPerDus)); if(dus<=0||per<=0) throw new Error('Produksi dan Qty/Dus harus lebih dari 0.'); const today=new Date().toISOString().slice(0,10); let batch=String(raw.batchNo||''); if(!batch){const {rows}=await client.query("SELECT batch_no FROM spk WHERE tanggal=$1 ORDER BY batch_no DESC LIMIT 1",[today]); const next=(Number(rows[0]?.batch_no?.slice(0,2))||0)+1; batch=`${String(next).padStart(2,'0')}-${today.slice(8,10)}${today.slice(5,7)}${today.slice(0,4)}`;} await client.query('INSERT INTO spk(batch_no,tanggal,produk,botol,produksi_dus,qty_per_dus,qty,created_by,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)',[batch,today,produk,botol,dus,per,dus*per,user.username,raw.status||'normal']); saved.push(batch); }});
     const items=(await getSpk()).filter(x=>saved.includes(x.batchNo)); return action.endsWith('batchCreate')?{saved:items}:{spk:items[0]};
   }
   if (action === 'spk.update') { const data=jsonParam(p.data,{}), {rows}=await pool.query('SELECT * FROM spk WHERE batch_no=$1',[p.batchNo]); if(!rows[0])throw new Error('SPK tidak ditemukan.'); requireManage(user,'spk',rows[0].created_by); const used=await pool.query('SELECT 1 FROM entries WHERE report_id LIKE $1 LIMIT 1',[`% - ${p.batchNo}`]); if(used.rowCount)throw new Error('SPK sudah digunakan sehingga tidak dapat diubah.'); const produk=await canonical('produk',data.produk),botol=await canonical('botol',data.botol),dus=Math.floor(num(data.produksiDus)),per=Math.floor(num(data.qtyPerDus)); await pool.query('UPDATE spk SET produk=$2,botol=$3,produksi_dus=$4,qty_per_dus=$5,qty=$6,updated_at=now(),update_count=update_count+1 WHERE batch_no=$1',[p.batchNo,produk,botol,dus,per,dus*per]); return {spk:(await getSpk()).find(x=>x.batchNo===p.batchNo)}; }

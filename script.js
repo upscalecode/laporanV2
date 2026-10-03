@@ -32,9 +32,8 @@
   let allAppViewsLoaded = false;
 
   const CONFIG = {
-    // Gunakan "apps-script" selama produksi lama masih aktif. Ubah menjadi
-    // "postgres" hanya pada environment uji/cutover backend baru.
-    API_MODE: "apps-script",
+    // PostgreSQL adalah backend utama aplikasi V2.
+    API_MODE: "postgres",
     POSTGRES_API_URL: "http://localhost:3000/api",
     URL_KEY: "ppr_apps_script_url_v4",
     URL_OVERRIDE_KEY: "ppr_apps_script_url_override_v1",
@@ -776,11 +775,18 @@
     const clean = normalizeWebAppUrl(url);
     if (!isValidWebAppUrl(clean)) {
       throw new Error(
-        "URL tidak valid. Gunakan URL Web App Apps Script yang berakhir /exec.",
+        CONFIG.API_MODE === "postgres"
+          ? "URL tidak valid. Gunakan URL HTTP/HTTPS backend PostgreSQL."
+          : "URL tidak valid. Gunakan URL Web App Apps Script yang berakhir /exec.",
       );
     }
     localStorage.setItem(CONFIG.URL_OVERRIDE_KEY, clean);
-    setConnection("idle", "URL Apps Script tersimpan");
+    setConnection(
+      "idle",
+      CONFIG.API_MODE === "postgres"
+        ? "URL PostgreSQL API tersimpan"
+        : "URL Apps Script tersimpan",
+    );
     return clean;
   }
 
@@ -815,11 +821,12 @@
     const text = await response.text();
     const trimmed = text.trim();
 
-    if (!response.ok) {
-      throw new Error(`Server mengembalikan HTTP ${response.status}.`);
-    }
     if (!trimmed) {
-      throw new Error("Apps Script tidak mengembalikan data.");
+      throw new Error(
+        response.ok
+          ? "Backend tidak mengembalikan data."
+          : `Server mengembalikan HTTP ${response.status} tanpa pesan.`,
+      );
     }
     if (
       /^<!doctype html/i.test(trimmed) ||
@@ -827,7 +834,9 @@
       /accounts\.google\.com/i.test(trimmed)
     ) {
       throw new Error(
-        "Apps Script mengembalikan halaman Google, bukan JSON. Deploy sebagai Web App: Execute as = Me dan akses = Anyone.",
+        CONFIG.API_MODE === "postgres"
+          ? "Backend PostgreSQL mengembalikan HTML, bukan JSON. Periksa URL API."
+          : "Apps Script mengembalikan halaman Google, bukan JSON. Deploy sebagai Web App: Execute as = Me dan akses = Anyone.",
       );
     }
 
@@ -835,14 +844,20 @@
     try {
       data = JSON.parse(trimmed);
     } catch (_) {
+      if (!response.ok) {
+        throw new Error(`Server mengembalikan HTTP ${response.status}.`);
+      }
       throw new Error(
-        "Respons Apps Script bukan JSON valid. Pastikan Code.gs dan deployment sudah diperbarui.",
+        CONFIG.API_MODE === "postgres"
+          ? "Respons backend PostgreSQL bukan JSON valid."
+          : "Respons Apps Script bukan JSON valid. Pastikan Code.gs dan deployment sudah diperbarui.",
       );
     }
 
-    if (!data || data.ok !== true) {
+    if (!response.ok || !data || data.ok !== true) {
       const error = new Error(
-        (data && data.message) || "Permintaan ke Apps Script gagal.",
+        (data && data.message) ||
+          `Permintaan ke backend gagal (HTTP ${response.status}).`,
       );
       error.isApiError = true;
       throw error;
@@ -853,14 +868,18 @@
   function normalizeApiError(err) {
     if (err && err.name === "AbortError") {
       return new Error(
-        "Koneksi ke Apps Script terlalu lama. Periksa internet dan deployment Web App.",
+        CONFIG.API_MODE === "postgres"
+          ? "Koneksi ke backend PostgreSQL terlalu lama. Pastikan server API berjalan."
+          : "Koneksi ke Apps Script terlalu lama. Periksa internet dan deployment Web App.",
       );
     }
     const msg =
       err && err.message ? err.message : String(err || "Terjadi kesalahan.");
     if (/Failed to fetch|NetworkError|Load failed|CORS/i.test(msg)) {
       return new Error(
-        "Tidak dapat menghubungi Apps Script. Gunakan URL /exec terbaru, deploy dengan akses Anyone, dan jangan memakai request JSON/custom header.",
+        CONFIG.API_MODE === "postgres"
+          ? "Tidak dapat menghubungi backend PostgreSQL. Pastikan server API berjalan dan CORS_ORIGIN sudah benar."
+          : "Tidak dapat menghubungi Apps Script. Gunakan URL /exec terbaru, deploy dengan akses Anyone, dan jangan memakai request JSON/custom header.",
       );
     }
     return err instanceof Error ? err : new Error(msg);
