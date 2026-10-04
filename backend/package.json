@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "test": "node --test --test-isolation=none test/domain.test.js",
+    "test": "node --test --test-isolation=none test/domain.test.js test/spk-update.test.js",
     "test:e2e": "node test/api.e2e.js",
     "db:init": "node src/init-db.js",
     "db:seed-dev": "node src/seed-dev.js",

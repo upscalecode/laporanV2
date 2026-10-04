@@ -168,7 +168,25 @@ app.all('/api', wrap(async req => {
     await transaction(async client => { for (const raw of list) { const produk=await canonicalOrCreateMaster(client,'produk',raw.produk), botol=await canonicalOrCreateMaster(client,'botol',raw.botol), dus=Math.floor(num(raw.produksiDus)), per=Math.floor(num(raw.qtyPerDus)); if(dus<=0||per<=0) throw new Error('Produksi dan Qty/Dus harus lebih dari 0.'); const today=new Date().toISOString().slice(0,10); let batch=String(raw.batchNo||''); if(!batch){const {rows}=await client.query("SELECT batch_no FROM spk WHERE tanggal=$1 ORDER BY batch_no DESC LIMIT 1",[today]); const next=(Number(rows[0]?.batch_no?.slice(0,2))||0)+1; batch=`${String(next).padStart(2,'0')}-${today.slice(8,10)}${today.slice(5,7)}${today.slice(0,4)}`;} await client.query('INSERT INTO spk(batch_no,tanggal,produk,botol,produksi_dus,qty_per_dus,qty,created_by,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)',[batch,today,produk,botol,dus,per,dus*per,user.username,raw.status||'normal']); saved.push(batch); }});
     const items=(await getSpk()).filter(x=>saved.includes(x.batchNo)); return action.endsWith('batchCreate')?{saved:items}:{spk:items[0]};
   }
-  if (action === 'spk.update') { const data=jsonParam(p.data,{}), {rows}=await pool.query('SELECT * FROM spk WHERE batch_no=$1',[p.batchNo]); if(!rows[0])throw new Error('SPK tidak ditemukan.'); requireManage(user,'spk',rows[0].created_by); const used=await pool.query('SELECT 1 FROM entries WHERE report_id LIKE $1 LIMIT 1',[`% - ${p.batchNo}`]); if(used.rowCount)throw new Error('SPK sudah digunakan sehingga tidak dapat diubah.'); const produk=await canonical('produk',data.produk),botol=await canonical('botol',data.botol),dus=Math.floor(num(data.produksiDus)),per=Math.floor(num(data.qtyPerDus)); await pool.query('UPDATE spk SET produk=$2,botol=$3,produksi_dus=$4,qty_per_dus=$5,qty=$6,updated_at=now(),update_count=update_count+1 WHERE batch_no=$1',[p.batchNo,produk,botol,dus,per,dus*per]); return {spk:(await getSpk()).find(x=>x.batchNo===p.batchNo)}; }
+  if (action === 'spk.update') {
+    const data=jsonParam(p.data,{}), batchNo=String(p.batchNo || '').trim();
+    await transaction(async client => {
+      const {rows}=await client.query('SELECT * FROM spk WHERE batch_no=$1 FOR UPDATE',[batchNo]);
+      if(!rows[0])throw new Error('SPK tidak ditemukan.');
+      requireManage(user,'spk',rows[0].created_by);
+      const produk=await canonical('produk',data.produk), botol=await canonical('botol',data.botol);
+      const dus=Math.floor(num(data.produksiDus)), per=Math.floor(num(data.qtyPerDus));
+      if(dus<=0 || per<=0)throw new Error('Produksi (Dus) dan Qty/Dus harus lebih dari 0.');
+      await client.query('UPDATE spk SET produk=$2,botol=$3,produksi_dus=$4,qty_per_dus=$5,qty=$6,updated_at=now(),update_count=update_count+1 WHERE batch_no=$1',[batchNo,produk,botol,dus,per,dus*per]);
+      await client.query(`UPDATE entries SET produk=$2,botol=$3,
+        botol_pecah_jenis=CASE WHEN botol_pecah_jenis='' OR botol_pecah_jenis=botol THEN $3 ELSE botol_pecah_jenis END,
+        updated_at=now(),update_count=update_count+1
+        WHERE substring(trim(report_id) from '(?i)^(?:FILL|PRESS)\\s*-\\s*(\\d{2}-\\d{8})$')=$1
+        AND tab IN ('filling','press') AND (produk IS DISTINCT FROM $2 OR botol IS DISTINCT FROM $3)`,[batchNo,produk,botol]);
+      await client.query('UPDATE press_adjustments SET produk=$2,botol=$3 WHERE target_batch_no=$1',[batchNo,produk,botol]);
+    });
+    return {spk:(await getSpk()).find(x=>x.batchNo===batchNo)};
+  }
   if (action === 'spk.delete' || action === 'spk.batchDelete') { const batches=action.endsWith('batchDelete')?jsonParam(p.batchNos,[]):[p.batchNo]; for(const batch of batches){const {rows}=await pool.query('SELECT * FROM spk WHERE batch_no=$1',[batch]);if(!rows[0])throw new Error(`SPK ${batch} tidak ditemukan.`);requireManage(user,'spk',rows[0].created_by);const used=await pool.query('SELECT 1 FROM entries WHERE report_id LIKE $1 LIMIT 1',[`% - ${batch}`]);if(used.rowCount)throw new Error(`SPK ${batch} sudah digunakan.`);} await pool.query('DELETE FROM spk WHERE batch_no=ANY($1)',[batches]); return action.endsWith('batchDelete')?{deletedBatchNos:batches}:{deletedBatchNo:p.batchNo}; }
 
   if (action === 'master.add' || action === 'master.remove') { requireLevel(user,'master','write'); const category=String(p.category), value=String(p.value||'').trim(); if(action.endsWith('add')) await pool.query('INSERT INTO master_values(category,value,position) VALUES($1,$2,(SELECT COALESCE(max(position),0)+1 FROM master_values WHERE category=$1)) ON CONFLICT DO NOTHING',[category,value]); else await pool.query('DELETE FROM master_values WHERE category=$1 AND lower(value)=lower($2)',[category,value]); return {master:await getMaster()}; }

@@ -7393,7 +7393,12 @@
             );
           }
           renderFillingSpkQueue();
-          toast(`SPK ${edit.key} berhasil di-update.`);
+          try {
+            await loadAppData();
+          } catch (refreshError) {
+            toast(`SPK tersimpan, tetapi data terbaru gagal dimuat: ${refreshError.message}. Muat ulang halaman.`, true);
+          }
+          toast(`SPK ${edit.key} dan data Filling/Press terkait berhasil di-update.`);
         } catch (err) {
           submitButton.disabled = false;
           return toast(`Gagal meng-update SPK: ${err.message}`, true);
@@ -8052,7 +8057,12 @@
   function aggregateLaporanRows(rows) {
     const groups = new Map();
     rows.forEach((entry) => {
-      const key = [entry.operator, entry.produk, entry.botol]
+      const key = [
+        entry.operator,
+        entry.produk,
+        entry.botol,
+        Number(entry.qtyBotolPerKardus) || 0,
+      ]
         .map((value) =>
           String(value || "")
             .trim()
@@ -8112,6 +8122,7 @@
     return [...groups.values()].map((group) => {
       const dates = [...group._dates].sort();
       const batches = [...group._batches];
+      group._batchNos = batches;
       const lines = [...group._lines];
       const isFilling = lines.length === 1 && lines[0] === "filling";
       const isPress = lines.length === 1 && lines[0] === "press";
@@ -8199,7 +8210,7 @@
       .map(
         (e) => `
       <tr>
-        <td><span class="id-badge">${esc(entryBatchNo(e) || e.reportId)}</span></td>
+        <td><span class="id-badge"${e._batchNos?.length > 1 ? ` title="${esc(`No batch: ${e._batchNos.join(", ")}`)}"` : ""}>${esc(entryBatchNo(e) || e.reportId)}</span></td>
         <td>${esc(laporanLineLabel(e.tab))}</td>
         <td>${esc(e.tanggal)}</td>
         <td>${esc(e.operator)}</td>
