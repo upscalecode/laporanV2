@@ -32,9 +32,9 @@
   let allAppViewsLoaded = false;
 
   const CONFIG = {
-    // PostgreSQL adalah backend utama aplikasi V2.
-    API_MODE: "postgres",
-    POSTGRES_API_URL: "http://localhost:3000/api",
+    // MySQL adalah backend utama aplikasi V2.
+    API_MODE: "mysql",
+    MYSQL_API_URL: "http://localhost:3000/api",
     URL_KEY: "ppr_apps_script_url_v4",
     URL_OVERRIDE_KEY: "ppr_apps_script_url_override_v1",
     TOKEN_KEY: "ppr_session_token_v3",
@@ -746,7 +746,7 @@
   }
 
   function isValidWebAppUrl(url) {
-    if (CONFIG.API_MODE === "postgres") {
+    if (CONFIG.API_MODE === "mysql") {
       try {
         const parsed = new URL(url);
         return parsed.protocol === "http:" || parsed.protocol === "https:";
@@ -760,8 +760,8 @@
   }
 
   function getWebhookUrl() {
-    if (CONFIG.API_MODE === "postgres") {
-      return normalizeWebAppUrl(CONFIG.POSTGRES_API_URL);
+    if (CONFIG.API_MODE === "mysql") {
+      return normalizeWebAppUrl(CONFIG.MYSQL_API_URL);
     }
     return normalizeWebAppUrl(
       localStorage.getItem(CONFIG.URL_OVERRIDE_KEY) ||
@@ -775,16 +775,16 @@
     const clean = normalizeWebAppUrl(url);
     if (!isValidWebAppUrl(clean)) {
       throw new Error(
-        CONFIG.API_MODE === "postgres"
-          ? "URL tidak valid. Gunakan URL HTTP/HTTPS backend PostgreSQL."
+        CONFIG.API_MODE === "mysql"
+          ? "URL tidak valid. Gunakan URL HTTP/HTTPS backend MySQL."
           : "URL tidak valid. Gunakan URL Web App Apps Script yang berakhir /exec.",
       );
     }
     localStorage.setItem(CONFIG.URL_OVERRIDE_KEY, clean);
     setConnection(
       "idle",
-      CONFIG.API_MODE === "postgres"
-        ? "URL PostgreSQL API tersimpan"
+      CONFIG.API_MODE === "mysql"
+        ? "URL MySQL API tersimpan"
         : "URL Apps Script tersimpan",
     );
     return clean;
@@ -799,8 +799,8 @@
     const url = getWebhookUrl();
     if (!url || !isValidWebAppUrl(url)) {
       throw new Error(
-        CONFIG.API_MODE === "postgres"
-          ? "URL backend PostgreSQL belum benar. Periksa CONFIG.POSTGRES_API_URL."
+        CONFIG.API_MODE === "mysql"
+          ? "URL backend MySQL belum benar. Periksa CONFIG.MYSQL_API_URL."
           : "URL Apps Script belum benar. Tempel URL deployment Web App /exec pada CONFIG.WEB_APP_URL.",
       );
     }
@@ -834,8 +834,8 @@
       /accounts\.google\.com/i.test(trimmed)
     ) {
       throw new Error(
-        CONFIG.API_MODE === "postgres"
-          ? "Backend PostgreSQL mengembalikan HTML, bukan JSON. Periksa URL API."
+        CONFIG.API_MODE === "mysql"
+          ? "Backend MySQL mengembalikan HTML, bukan JSON. Periksa URL API."
           : "Apps Script mengembalikan halaman Google, bukan JSON. Deploy sebagai Web App: Execute as = Me dan akses = Anyone.",
       );
     }
@@ -848,8 +848,8 @@
         throw new Error(`Server mengembalikan HTTP ${response.status}.`);
       }
       throw new Error(
-        CONFIG.API_MODE === "postgres"
-          ? "Respons backend PostgreSQL bukan JSON valid."
+        CONFIG.API_MODE === "mysql"
+          ? "Respons backend MySQL bukan JSON valid."
           : "Respons Apps Script bukan JSON valid. Pastikan Code.gs dan deployment sudah diperbarui.",
       );
     }
@@ -868,8 +868,8 @@
   function normalizeApiError(err) {
     if (err && err.name === "AbortError") {
       return new Error(
-        CONFIG.API_MODE === "postgres"
-          ? "Koneksi ke backend PostgreSQL terlalu lama. Pastikan server API berjalan."
+        CONFIG.API_MODE === "mysql"
+          ? "Koneksi ke backend MySQL terlalu lama. Pastikan server API berjalan."
           : "Koneksi ke Apps Script terlalu lama. Periksa internet dan deployment Web App.",
       );
     }
@@ -877,8 +877,8 @@
       err && err.message ? err.message : String(err || "Terjadi kesalahan.");
     if (/Failed to fetch|NetworkError|Load failed|CORS/i.test(msg)) {
       return new Error(
-        CONFIG.API_MODE === "postgres"
-          ? "Tidak dapat menghubungi backend PostgreSQL. Pastikan server API berjalan dan CORS_ORIGIN sudah benar."
+        CONFIG.API_MODE === "mysql"
+          ? "Tidak dapat menghubungi backend MySQL. Pastikan server API berjalan dan CORS_ORIGIN sudah benar."
           : "Tidak dapat menghubungi Apps Script. Gunakan URL /exec terbaru, deploy dengan akses Anyone, dan jangan memakai request JSON/custom header.",
       );
     }

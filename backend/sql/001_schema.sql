@@ -1,147 +1,155 @@
-BEGIN;
+-- MySQL 8.0.16+ / MariaDB 10.4+ (phpMyAdmin)
+-- Select an empty database before importing. Safe to re-run on this schema.
+SET NAMES utf8mb4 COLLATE utf8mb4_bin;
+SET time_zone = '+00:00';
 
 CREATE TABLE IF NOT EXISTS users (
-  username text PRIMARY KEY,
-  password_hash text NOT NULL,
-  password_scheme text NOT NULL DEFAULT 'sha256-legacy',
-  name text NOT NULL,
-  role text NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'superuser')),
+  username VARCHAR(191) PRIMARY KEY,
+  password_hash TEXT NOT NULL,
+  password_scheme VARCHAR(64) NOT NULL DEFAULT 'sha256-legacy',
+  name TEXT NOT NULL,
+  role VARCHAR(64) NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'superuser')),
   active boolean NOT NULL DEFAULT true,
-  permissions jsonb NOT NULL DEFAULT '{}'::jsonb,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
+  permissions JSON NOT NULL DEFAULT ('{}'),
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS sessions (
-  token text PRIMARY KEY,
-  username text NOT NULL REFERENCES users(username) ON DELETE CASCADE,
-  expires_at timestamptz NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS sessions_expires_idx ON sessions(expires_at);
+  token VARCHAR(191) PRIMARY KEY,
+  username VARCHAR(191) NOT NULL,
+  expires_at DATETIME(3) NOT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE,
+  INDEX sessions_expires_idx (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS master_values (
-  category text NOT NULL CHECK (category IN ('operator','produk','botol','botolpecah','apdCriteria')),
-  value text NOT NULL,
+  category VARCHAR(32) NOT NULL CHECK (category IN ('operator','produk','botol','botolpecah','apdCriteria')),
+  value VARCHAR(191) NOT NULL,
   position integer NOT NULL DEFAULT 0,
   PRIMARY KEY (category, value)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS spk (
-  batch_no text PRIMARY KEY,
+  batch_no VARCHAR(191) PRIMARY KEY,
   tanggal date NOT NULL,
-  produk text NOT NULL,
-  botol text NOT NULL,
-  produksi_dus numeric NOT NULL DEFAULT 0 CHECK (produksi_dus >= 0),
-  qty_per_dus numeric NOT NULL DEFAULT 0 CHECK (qty_per_dus >= 0),
-  qty numeric NOT NULL DEFAULT 0 CHECK (qty >= 0),
-  created_by text REFERENCES users(username) ON UPDATE CASCADE,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz,
+  produk VARCHAR(191) NOT NULL,
+  botol VARCHAR(191) NOT NULL,
+  produksi_dus DECIMAL(20,6) NOT NULL DEFAULT 0 CHECK (produksi_dus >= 0),
+  qty_per_dus DECIMAL(20,6) NOT NULL DEFAULT 0 CHECK (qty_per_dus >= 0),
+  qty DECIMAL(20,6) NOT NULL DEFAULT 0 CHECK (qty >= 0),
+  created_by VARCHAR(191),
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3),
   update_count integer NOT NULL DEFAULT 0 CHECK (update_count >= 0),
-  status text NOT NULL DEFAULT 'normal'
-);
-CREATE INDEX IF NOT EXISTS spk_tanggal_idx ON spk(tanggal DESC);
+  status VARCHAR(64) NOT NULL DEFAULT 'normal',
+  FOREIGN KEY (created_by) REFERENCES users(username) ON UPDATE CASCADE,
+  INDEX spk_tanggal_idx (tanggal)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS entries (
-  id text PRIMARY KEY,
-  report_id text NOT NULL,
-  tab text NOT NULL CHECK (tab IN ('filling','press')),
+  id VARCHAR(191) PRIMARY KEY,
+  report_id VARCHAR(191) NOT NULL,
+  tab VARCHAR(191) NOT NULL CHECK (tab IN ('filling','press')),
   tanggal date NOT NULL,
-  operator text NOT NULL,
-  produk text NOT NULL,
-  botol text NOT NULL,
-  qty_kardus numeric NOT NULL DEFAULT 0 CHECK (qty_kardus >= 0),
-  qty_botol_per_kardus numeric NOT NULL DEFAULT 0 CHECK (qty_botol_per_kardus >= 0),
-  total_qty numeric NOT NULL DEFAULT 0 CHECK (total_qty >= 0),
-  botol_pecah_jenis text NOT NULL DEFAULT '',
-  qty_botol_pecah numeric NOT NULL DEFAULT 0 CHECK (qty_botol_pecah >= 0),
-  qty_kardus_basah numeric NOT NULL DEFAULT 0 CHECK (qty_kardus_basah >= 0),
-  created_by text REFERENCES users(username) ON UPDATE CASCADE,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz,
+  operator VARCHAR(191) NOT NULL,
+  produk VARCHAR(191) NOT NULL,
+  botol VARCHAR(191) NOT NULL,
+  qty_kardus DECIMAL(20,6) NOT NULL DEFAULT 0 CHECK (qty_kardus >= 0),
+  qty_botol_per_kardus DECIMAL(20,6) NOT NULL DEFAULT 0 CHECK (qty_botol_per_kardus >= 0),
+  total_qty DECIMAL(20,6) NOT NULL DEFAULT 0 CHECK (total_qty >= 0),
+  botol_pecah_jenis TEXT NOT NULL DEFAULT (''),
+  qty_botol_pecah DECIMAL(20,6) NOT NULL DEFAULT 0 CHECK (qty_botol_pecah >= 0),
+  qty_kardus_basah DECIMAL(20,6) NOT NULL DEFAULT 0 CHECK (qty_kardus_basah >= 0),
+  created_by VARCHAR(191),
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3),
   update_count integer NOT NULL DEFAULT 0 CHECK (update_count >= 0),
-  sisa_press_tanggal_asal text NOT NULL DEFAULT '',
-  keterangan text NOT NULL DEFAULT ''
-);
-CREATE INDEX IF NOT EXISTS entries_tab_tanggal_idx ON entries(tab, tanggal DESC);
-CREATE INDEX IF NOT EXISTS entries_produk_botol_idx ON entries(lower(produk), lower(botol));
-CREATE INDEX IF NOT EXISTS entries_report_id_idx ON entries(report_id);
+  sisa_press_tanggal_asal TEXT NOT NULL DEFAULT (''),
+  keterangan TEXT NOT NULL DEFAULT (''),
+  FOREIGN KEY (created_by) REFERENCES users(username) ON UPDATE CASCADE,
+  INDEX entries_tab_tanggal_idx (tab, tanggal),
+  INDEX entries_produk_botol_idx (produk, botol),
+  INDEX entries_report_id_idx (report_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS deleted_entry_audits (
-  id bigserial PRIMARY KEY,
-  line text NOT NULL,
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  line TEXT NOT NULL,
   tanggal date,
-  operator text,
-  produk text,
-  botol text,
-  batch_no text,
+  operator VARCHAR(191),
+  produk VARCHAR(191),
+  botol VARCHAR(191),
+  batch_no VARCHAR(191),
   next_update_count integer NOT NULL DEFAULT 1,
-  deleted_at timestamptz NOT NULL DEFAULT now(),
-  deleted_by text,
-  restored_entry_id text,
-  restored_at timestamptz
-);
+  deleted_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  deleted_by TEXT,
+  restored_entry_id TEXT,
+  restored_at DATETIME(3)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS press_adjustments (
-  id text PRIMARY KEY,
+  id VARCHAR(191) PRIMARY KEY,
   tanggal date NOT NULL,
-  produk text NOT NULL,
-  botol text NOT NULL,
-  qty_ditutup numeric NOT NULL CHECK (qty_ditutup >= 0),
-  alasan text NOT NULL,
-  closed_by text,
-  closed_by_name text,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  qty_botol_per_kardus numeric NOT NULL DEFAULT 0,
-  target_batch_no text NOT NULL DEFAULT '',
-  target_tanggal_asal text NOT NULL DEFAULT '',
+  produk VARCHAR(191) NOT NULL,
+  botol VARCHAR(191) NOT NULL,
+  qty_ditutup DECIMAL(20,6) NOT NULL CHECK (qty_ditutup >= 0),
+  alasan TEXT NOT NULL,
+  closed_by TEXT,
+  closed_by_name TEXT,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  qty_botol_per_kardus DECIMAL(20,6) NOT NULL DEFAULT 0,
+  target_batch_no TEXT NOT NULL DEFAULT (''),
+  target_tanggal_asal TEXT NOT NULL DEFAULT (''),
   archived boolean NOT NULL DEFAULT false
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS apd_entries (
-  id text PRIMARY KEY,
+  id VARCHAR(191) PRIMARY KEY,
   tanggal date NOT NULL,
-  operator text NOT NULL,
-  scores jsonb NOT NULL DEFAULT '{}'::jsonb,
-  total_points numeric NOT NULL DEFAULT 0,
-  percentage numeric NOT NULL DEFAULT 0,
-  alasan text NOT NULL DEFAULT '',
-  created_by text REFERENCES users(username) ON UPDATE CASCADE,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz,
-  UNIQUE (tanggal, operator)
-);
+  operator VARCHAR(191) NOT NULL,
+  scores JSON NOT NULL DEFAULT ('{}'),
+  total_points DECIMAL(20,6) NOT NULL DEFAULT 0,
+  percentage DECIMAL(20,6) NOT NULL DEFAULT 0,
+  alasan TEXT NOT NULL DEFAULT (''),
+  created_by VARCHAR(191),
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3),
+  UNIQUE (tanggal, operator),
+  FOREIGN KEY (created_by) REFERENCES users(username) ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS apd_photos (
-  id text PRIMARY KEY,
-  apd_id text REFERENCES apd_entries(id) ON DELETE CASCADE,
-  uploaded_by text REFERENCES users(username) ON UPDATE CASCADE,
-  mime_type text NOT NULL DEFAULT 'image/jpeg',
-  data bytea NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
+  id VARCHAR(191) PRIMARY KEY,
+  apd_id VARCHAR(191),
+  uploaded_by VARCHAR(191),
+  mime_type VARCHAR(64) NOT NULL DEFAULT 'image/jpeg',
+  data LONGBLOB NOT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  FOREIGN KEY (apd_id) REFERENCES apd_entries(id) ON DELETE CASCADE,
+  FOREIGN KEY (uploaded_by) REFERENCES users(username) ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS downtime_entries (
   tanggal date PRIMARY KEY,
   production_start_time time NOT NULL,
-  arrival_timestamp timestamptz NOT NULL,
-  down_time numeric NOT NULL,
-  alasan text NOT NULL,
-  keterangan text NOT NULL DEFAULT '',
-  updated_by text REFERENCES users(username) ON UPDATE CASCADE,
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
+  arrival_timestamp DATETIME(3) NOT NULL,
+  down_time DECIMAL(20,6) NOT NULL,
+  alasan TEXT NOT NULL,
+  keterangan TEXT NOT NULL DEFAULT (''),
+  updated_by VARCHAR(191),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  FOREIGN KEY (updated_by) REFERENCES users(username) ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS settings (
-  key text PRIMARY KEY,
-  value jsonb NOT NULL,
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  updated_by text
-);
+  setting_key VARCHAR(191) PRIMARY KEY,
+  value JSON NOT NULL,
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_by VARCHAR(191)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
-INSERT INTO settings(key, value, updated_by) VALUES
-  ('kpiFillingOutputTargetMonthly', '150000'::jsonb, 'setup'),
-  ('kpiPressOutputTargetMonthly', '70000'::jsonb, 'setup')
-ON CONFLICT (key) DO NOTHING;
-
-COMMIT;
+INSERT INTO settings(setting_key, value, updated_by) VALUES
+  ('kpiFillingOutputTargetMonthly', '150000', 'setup'),
+  ('kpiPressOutputTargetMonthly', '70000', 'setup')
+ON DUPLICATE KEY UPDATE setting_key=setting_key;

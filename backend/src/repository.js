@@ -12,9 +12,9 @@ export async function getMaster() {
 }
 
 export async function getSettings() {
-  const { rows } = await q('SELECT key, value FROM settings');
+  const { rows } = await q('SELECT setting_key, value FROM settings');
   const out = { kpiFillingOutputTargetMonthly: 150000, kpiPressOutputTargetMonthly: 70000 };
-  for (const row of rows) out[row.key] = typeof row.value === 'number' ? row.value : Number(row.value);
+  for (const row of rows) out[row.setting_key] = typeof row.value === 'number' ? row.value : Number(row.value);
   return out;
 }
 
@@ -34,7 +34,14 @@ export async function getAdjustments() {
 }
 
 export async function getApd() {
-  const { rows } = await q(`SELECT a.*, COALESCE(array_agg(p.id) FILTER (WHERE p.id IS NOT NULL), '{}') photo_ids FROM apd_entries a LEFT JOIN apd_photos p ON p.apd_id=a.id GROUP BY a.id ORDER BY a.tanggal DESC, a.updated_at DESC NULLS LAST`);
+  const { rows } = await q('SELECT * FROM apd_entries ORDER BY tanggal DESC, updated_at DESC');
+  const { rows: photos } = await q('SELECT id, apd_id FROM apd_photos WHERE apd_id IS NOT NULL ORDER BY created_at, id');
+  const byEntry = new Map();
+  for (const photo of photos) {
+    if (!byEntry.has(photo.apd_id)) byEntry.set(photo.apd_id, []);
+    byEntry.get(photo.apd_id).push(photo.id);
+  }
+  for (const row of rows) row.photo_ids = byEntry.get(row.id) || [];
   return rows.map(r => ({ id:r.id, tanggal:dateText(r.tanggal), operator:r.operator, scores:r.scores || {}, totalPoints:num(r.total_points), percentage:num(r.percentage), alasan:r.alasan, photoFileIds:r.photo_ids, photoFileId:JSON.stringify(r.photo_ids), createdBy:r.created_by || '', createdAt:iso(r.created_at), updatedAt:iso(r.updated_at) }));
 }
 

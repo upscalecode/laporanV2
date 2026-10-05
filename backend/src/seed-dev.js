@@ -9,8 +9,8 @@ if (!username || !password) throw new Error('DEV_ADMIN_USERNAME dan DEV_ADMIN_PA
 
 await pool.query(
   `INSERT INTO users(username,password_hash,password_scheme,name,role,active,permissions)
-   VALUES($1,$2,'bcrypt','Administrator Lokal','superuser',true,$3)
-   ON CONFLICT(username) DO UPDATE SET password_hash=$2,password_scheme='bcrypt',active=true,permissions=$3`,
+   VALUES(:p1,:p2,'bcrypt','Administrator Lokal','superuser',true,:p3)
+   ON DUPLICATE KEY UPDATE password_hash=:p2,password_scheme='bcrypt',active=true,permissions=:p3`,
   [username, await bcrypt.hash(password, 12), JSON.stringify(defaultPermissions('superuser'))],
 );
 console.log(`Akun development ${username} siap.`);
