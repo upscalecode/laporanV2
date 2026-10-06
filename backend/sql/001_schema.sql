@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 CREATE TABLE IF NOT EXISTS master_values (
-  category VARCHAR(32) NOT NULL CHECK (category IN ('operator','produk','botol','botolpecah','apdCriteria')),
+  category VARCHAR(60) NOT NULL CHECK (category IN ('operator','produk','botol','botolpecah','apdCriteria')),
   value VARCHAR(191) NOT NULL,
   position integer NOT NULL DEFAULT 0,
   PRIMARY KEY (category, value)
