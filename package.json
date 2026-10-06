@@ -1,0 +1,9 @@
+{
+    "$schema": "https://www.schemastore.org/package.json",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "test": "node --test tools/*.test.mjs",
+        "check": "node --check public/js/app.js"
+    }
+}

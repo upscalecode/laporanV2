@@ -67,7 +67,7 @@ test('backend rejects late arrival marked on time before accessing sheet', () =>
   assert.throws(()=>c.upsertDowntimeEntry_({}, {arrivalTimestamp:new Date().toISOString(),alasan:'Tepat Waktu'}),/Pilih alasan keterlambatan/);
 });
 test('frontend clears on-time reason after arrival becomes late', () => {
-  const script=fs.readFileSync(new URL('../script.js',import.meta.url),'utf8');
+  const script=fs.readFileSync(new URL('../public/js/app.js',import.meta.url),'utf8');
   const body=script.match(/const syncDowntime = \(\) => \{([\s\S]*?)\r?\n    \};/)[1];
   const option={};
   const ctx={arrival:{value:'08:15'},productionStart:{},productionStartTime:'08:30',minutes:{},reason:{value:'',querySelector:()=>option},note:{},syncNote(){},minutesOfDay:v=>v?Number(v.slice(0,2))*60+Number(v.slice(3)):null};
