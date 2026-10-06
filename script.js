@@ -32,9 +32,6 @@
   let allAppViewsLoaded = false;
 
   const CONFIG = {
-    // MySQL adalah backend utama aplikasi V2.
-    API_MODE: "mysql",
-    MYSQL_API_URL: "http://localhost:3000/api",
     URL_KEY: "ppr_apps_script_url_v4",
     URL_OVERRIDE_KEY: "ppr_apps_script_url_override_v1",
     TOKEN_KEY: "ppr_session_token_v3",
@@ -52,8 +49,7 @@
     AUTOSAVE_INTERVAL_MS: 15 * 60 * 1000,
 
     // Ganti dengan URL deployment Web App terbaru yang berakhir /exec.
-    WEB_APP_URL:
-      "https://script.google.com/macros/s/AKfycbwT3WMijS72F7bZKSersSO_jPmgPZdf6Rn-7HBszKJkye0_8TUT9Yo5ry1gF8aqP6SI/exec",
+    WEB_APP_URL: "url web app yang digunakan",
   };
 
   const SCHEMA_VERSION = "2026-09-19-v15-all-line-hide-fourth-summary";
@@ -746,23 +742,12 @@
   }
 
   function isValidWebAppUrl(url) {
-    if (CONFIG.API_MODE === "mysql") {
-      try {
-        const parsed = new URL(url);
-        return parsed.protocol === "http:" || parsed.protocol === "https:";
-      } catch (_) {
-        return false;
-      }
-    }
     return /^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec(?:\?.*)?$/i.test(
       url,
     );
   }
 
   function getWebhookUrl() {
-    if (CONFIG.API_MODE === "mysql") {
-      return normalizeWebAppUrl(CONFIG.MYSQL_API_URL);
-    }
     return normalizeWebAppUrl(
       localStorage.getItem(CONFIG.URL_OVERRIDE_KEY) ||
         CONFIG.WEB_APP_URL ||
@@ -775,18 +760,11 @@
     const clean = normalizeWebAppUrl(url);
     if (!isValidWebAppUrl(clean)) {
       throw new Error(
-        CONFIG.API_MODE === "mysql"
-          ? "URL tidak valid. Gunakan URL HTTP/HTTPS backend MySQL."
-          : "URL tidak valid. Gunakan URL Web App Apps Script yang berakhir /exec.",
+        "URL tidak valid. Gunakan URL Web App Apps Script yang berakhir /exec.",
       );
     }
     localStorage.setItem(CONFIG.URL_OVERRIDE_KEY, clean);
-    setConnection(
-      "idle",
-      CONFIG.API_MODE === "mysql"
-        ? "URL MySQL API tersimpan"
-        : "URL Apps Script tersimpan",
-    );
+    setConnection("idle", "URL Apps Script tersimpan");
     return clean;
   }
 
@@ -799,9 +777,7 @@
     const url = getWebhookUrl();
     if (!url || !isValidWebAppUrl(url)) {
       throw new Error(
-        CONFIG.API_MODE === "mysql"
-          ? "URL backend MySQL belum benar. Periksa CONFIG.MYSQL_API_URL."
-          : "URL Apps Script belum benar. Tempel URL deployment Web App /exec pada CONFIG.WEB_APP_URL.",
+        "URL Apps Script belum benar. Tempel URL deployment Web App /exec pada CONFIG.WEB_APP_URL.",
       );
     }
     return url;
@@ -821,12 +797,11 @@
     const text = await response.text();
     const trimmed = text.trim();
 
+    if (!response.ok) {
+      throw new Error(`Server mengembalikan HTTP ${response.status}.`);
+    }
     if (!trimmed) {
-      throw new Error(
-        response.ok
-          ? "Backend tidak mengembalikan data."
-          : `Server mengembalikan HTTP ${response.status} tanpa pesan.`,
-      );
+      throw new Error("Apps Script tidak mengembalikan data.");
     }
     if (
       /^<!doctype html/i.test(trimmed) ||
@@ -834,9 +809,7 @@
       /accounts\.google\.com/i.test(trimmed)
     ) {
       throw new Error(
-        CONFIG.API_MODE === "mysql"
-          ? "Backend MySQL mengembalikan HTML, bukan JSON. Periksa URL API."
-          : "Apps Script mengembalikan halaman Google, bukan JSON. Deploy sebagai Web App: Execute as = Me dan akses = Anyone.",
+        "Apps Script mengembalikan halaman Google, bukan JSON. Deploy sebagai Web App: Execute as = Me dan akses = Anyone.",
       );
     }
 
@@ -844,20 +817,14 @@
     try {
       data = JSON.parse(trimmed);
     } catch (_) {
-      if (!response.ok) {
-        throw new Error(`Server mengembalikan HTTP ${response.status}.`);
-      }
       throw new Error(
-        CONFIG.API_MODE === "mysql"
-          ? "Respons backend MySQL bukan JSON valid."
-          : "Respons Apps Script bukan JSON valid. Pastikan Code.gs dan deployment sudah diperbarui.",
+        "Respons Apps Script bukan JSON valid. Pastikan Code.gs dan deployment sudah diperbarui.",
       );
     }
 
-    if (!response.ok || !data || data.ok !== true) {
+    if (!data || data.ok !== true) {
       const error = new Error(
-        (data && data.message) ||
-          `Permintaan ke backend gagal (HTTP ${response.status}).`,
+        (data && data.message) || "Permintaan ke Apps Script gagal.",
       );
       error.isApiError = true;
       throw error;
@@ -868,18 +835,14 @@
   function normalizeApiError(err) {
     if (err && err.name === "AbortError") {
       return new Error(
-        CONFIG.API_MODE === "mysql"
-          ? "Koneksi ke backend MySQL terlalu lama. Pastikan server API berjalan."
-          : "Koneksi ke Apps Script terlalu lama. Periksa internet dan deployment Web App.",
+        "Koneksi ke Apps Script terlalu lama. Periksa internet dan deployment Web App.",
       );
     }
     const msg =
       err && err.message ? err.message : String(err || "Terjadi kesalahan.");
     if (/Failed to fetch|NetworkError|Load failed|CORS/i.test(msg)) {
       return new Error(
-        CONFIG.API_MODE === "mysql"
-          ? "Tidak dapat menghubungi backend MySQL. Pastikan server API berjalan dan CORS_ORIGIN sudah benar."
-          : "Tidak dapat menghubungi Apps Script. Gunakan URL /exec terbaru, deploy dengan akses Anyone, dan jangan memakai request JSON/custom header.",
+        "Tidak dapat menghubungi Apps Script. Gunakan URL /exec terbaru, deploy dengan akses Anyone, dan jangan memakai request JSON/custom header.",
       );
     }
     return err instanceof Error ? err : new Error(msg);
@@ -1250,7 +1213,37 @@
   }
 
   /* ------------------------- LOGIN PAGE ------------------------- */
+  function initPasswordToggle(id) {
+    const input = el(id);
+    if (!input || input.closest(".password-wrapper")) return;
+    const wrapper = document.createElement("span");
+    wrapper.className = "password-wrapper";
+    input.before(wrapper);
+    wrapper.append(input);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "toggle-password";
+    button.setAttribute("aria-controls", id);
+    function setVisible(visible) {
+      input.type = visible ? "text" : "password";
+      button.innerHTML = visible
+        ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>'
+        : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 9c2 4 5 6 9 6s7-2 9-6M5 12l-2 3m6-1-1 4m7-4 1 4m3-6 2 3"/></svg>';
+      const label = visible ? "Sembunyikan password" : "Tampilkan password";
+      button.setAttribute("aria-label", label);
+      button.title = label;
+      button.setAttribute("aria-pressed", String(visible));
+    }
+    setVisible(false);
+    button.addEventListener("click", () =>
+      setVisible(input.type === "password"),
+    );
+    input.form?.addEventListener("reset", () => setVisible(false));
+    wrapper.append(button);
+  }
+
   async function initLoginPage() {
+    initPasswordToggle("loginPassword");
     const form = el("loginForm");
     if (!form) return;
 
@@ -1905,7 +1898,7 @@
 
   function approximateMasterValue(category, value) {
     const target = normalizedFuzzyText(value);
-    if (target.length < 4) return "";
+    if (target.length < 5) return "";
     const targetNumbers = target.match(/\d+/g) || [];
     const candidates = masterValues(category)
       .map((masterValue) => {
@@ -1913,26 +1906,81 @@
         const candidateNumbers = normalized.match(/\d+/g) || [];
         // Angka merupakan identitas penting, khususnya ukuran botol.
         if (targetNumbers.join("|") !== candidateNumbers.join("|")) return null;
-        const longest = Math.max(target.length, normalized.length);
-        const similarity = longest
-          ? 1 - levenshteinDistance(target, normalized) / longest
-          : 0;
-        return { value: masterValue, similarity };
+        const distance = levenshteinDistance(target, normalized);
+        return {
+          value: masterValue,
+          distance,
+          similarity: 1 - distance / Math.max(target.length, normalized.length),
+        };
       })
       .filter(Boolean)
-      .sort((a, b) => b.similarity - a.similarity);
+      .sort((a, b) => a.distance - b.distance);
     const best = candidates[0];
-    if (!best) return "";
-    const minimumSimilarity = target.length < 7 ? 0.85 : 0.75;
-    if (best.similarity < minimumSimilarity) return "";
+    if (!best || best.distance > 2) return "";
+    if (target.length < 8 && (best.distance > 1 || best.similarity < 0.85))
+      return "";
+    if (best.distance === 2 && (target.length < 15 || best.similarity < 0.9))
+      return "";
+    const equallyClose = candidates.filter(
+      (candidate) => candidate.distance === best.distance,
+    );
+    if (equallyClose.length !== 1) return "";
     const second = candidates[1];
-    if (
-      second &&
-      best.similarity < 0.9 &&
-      best.similarity - second.similarity < 0.04
-    )
+    if (best.distance === 2 && second && second.distance - best.distance < 2)
       return "";
     return best.value;
+  }
+
+  function firstSpkImportValue(value) {
+    return String(value || "")
+      .split("/", 1)[0]
+      .trim()
+      .replace(/\s+/g, " ");
+  }
+
+  function matchSpkBottleBySize(value) {
+    const target = normalizedFuzzyText(value);
+    const targetNumbers = target.match(/\d+/g) || [];
+    if (!targetNumbers.length) return "";
+    const unitAliases = [
+      [/millilit(?:er|re)s?/, "ml"],
+      [/cc/, "ml"],
+      [/ml/, "ml"],
+      [/lit(?:er|re)s?/, "l"],
+      [/ltr/, "l"],
+      [/l/, "l"],
+      [/pieces?/, "pcs"],
+      [/pcs?/, "pcs"],
+    ];
+    let targetText = target
+      .replace(/\d+/g, "")
+      .replace(/^(?:botol|btl|bottle)/, "");
+    let targetUnit = "";
+    unitAliases.forEach(([pattern, unit]) => {
+      if (pattern.test(targetText)) {
+        targetUnit = unit;
+        targetText = targetText.replace(pattern, "");
+      }
+    });
+    if (targetText) return "";
+    const matches = masterValues("botol").filter((masterValue) => {
+      const candidate = normalizedFuzzyText(masterValue);
+      const candidateNumbers = candidate.match(/\d+/g) || [];
+      if (targetNumbers.join("|") !== candidateNumbers.join("|")) return false;
+      if (!targetUnit) return true;
+      let candidateText = candidate
+        .replace(/\d+/g, "")
+        .replace(/^(?:botol|btl|bottle)/, "");
+      let candidateUnit = "";
+      unitAliases.forEach(([pattern, unit]) => {
+        if (pattern.test(candidateText)) {
+          candidateUnit = unit;
+          candidateText = candidateText.replace(pattern, "");
+        }
+      });
+      return candidateUnit === targetUnit;
+    });
+    return matches.length === 1 ? matches[0] : "";
   }
 
   function normalizeSpkProductName(value) {
@@ -6530,7 +6578,7 @@
     )
       return;
 
-    let arrivalTimestamp = "";
+    const productionStartTime = "08:30";
     const timeValue = (date) =>
       `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
     const minutesOfDay = (value) => {
@@ -6539,7 +6587,8 @@
     };
     const syncDowntime = () => {
       const arrivalMinutes = minutesOfDay(arrival.value);
-      const startMinutes = minutesOfDay(productionStart.value);
+      productionStart.value = productionStartTime;
+      const startMinutes = minutesOfDay(productionStartTime);
       const result =
         arrivalMinutes === null || startMinutes === null
           ? ""
@@ -6549,7 +6598,11 @@
       if (isOnTime) {
         reason.value = "Tepat Waktu";
         note.value = "";
+      } else if (reason.value === "Tepat Waktu") {
+        reason.value = "";
       }
+      const onTimeOption = reason.querySelector('option[value="Tepat Waktu"]');
+      if (onTimeOption) onTimeOption.disabled = !isOnTime;
       reason.disabled = isOnTime;
       syncNote();
       return result;
@@ -6583,33 +6636,21 @@
       const arrivalDate = entry?.timestamp
         ? new Date(entry.timestamp)
         : new Date();
-      arrivalTimestamp = arrivalDate.toISOString();
       arrival.value = timeValue(arrivalDate);
-      if (entry) {
-        if (/^\d{2}:\d{2}$/.test(entry.productionStartTime || "")) {
-          productionStart.value = entry.productionStartTime;
-        } else {
-          const arrivalMinutes = minutesOfDay(arrival.value);
-          const startMinutes = Math.max(
-            0,
-            (arrivalMinutes ?? 0) - Math.max(0, Number(entry.downTime) || 0),
-          );
-          productionStart.value = `${String(Math.floor(startMinutes / 60)).padStart(2, "0")}:${String(startMinutes % 60).padStart(2, "0")}`;
-        }
-      }
+      productionStart.value = productionStartTime;
       reason.value = entry?.alasan || "";
       note.value = entry?.keterangan || "";
       syncNote();
       syncDowntime();
       if (error) error.hidden = true;
       modal.hidden = false;
-      productionStart.focus();
+      arrival.focus();
     };
     openFillingDowntimeModal = open;
 
     reason.addEventListener("change", syncNote);
-    productionStart.addEventListener("input", syncDowntime);
-    productionStart.addEventListener("change", syncDowntime);
+    arrival.addEventListener("input", syncDowntime);
+    arrival.addEventListener("change", syncDowntime);
     el("fillingDowntimeValidateButton")?.addEventListener("click", open);
     el("fillingDowntimeReopenButton")?.addEventListener("click", open);
     el("fillingDowntimeHistoryButton")?.addEventListener("click", open);
@@ -6620,15 +6661,16 @@
     });
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const downTime = Number(syncDowntime());
+      const downtimeValue = syncDowntime();
+      const downTime = Number(downtimeValue);
       const alasan = reason.value;
       const keterangan = note.value.trim();
-      if (!Number.isFinite(downTime)) {
+      if (downtimeValue === "" || !Number.isFinite(downTime)) {
         if (error) {
           error.textContent = "Hasil Down Time tidak valid.";
           error.hidden = false;
         }
-        productionStart.focus();
+        arrival.focus();
         return;
       }
       if (!alasan || (alasan === "Lainnya" && !keterangan)) {
@@ -6641,6 +6683,10 @@
         }
         return;
       }
+      const arrivalDate = new Date();
+      const [hours, arrivalMinute] = arrival.value.split(":").map(Number);
+      arrivalDate.setHours(hours, arrivalMinute, 0, 0);
+      const arrivalTimestamp = arrivalDate.toISOString();
       const button = el("fillingDowntimeSave");
       if (button) button.disabled = true;
       try {
@@ -6648,7 +6694,7 @@
           apiPost("downtime.upsert", {
             data: JSON.stringify({
               arrivalTimestamp,
-              productionStartTime: productionStart.value,
+              productionStartTime,
               downTime,
               alasan,
               keterangan,
@@ -7148,14 +7194,14 @@
             : sourceRows;
         importRows.forEach((row, rowIndex) => {
           const batchNo = String(row[indexes["NO BATCH"]] || "").trim();
-          const merkText = String(row[indexes.MERK] || "").trim();
-          const varianText = String(row[indexes.VARIAN] || "").trim();
+          const merkText = firstSpkImportValue(row[indexes.MERK]);
+          const varianText = firstSpkImportValue(row[indexes.VARIAN]);
           const produkText = normalizeSpkProductName(
-            `${merkText} ${varianText}`,
+            firstSpkImportValue(`${merkText} ${varianText}`),
           );
           // Pada merged header, SheetJS menyimpan nilai di sel pertama.
           // indexOf mengambil kolom pertama/paling kiri tersebut.
-          const botolText = String(row[indexes["BOTOL (MILL)"]] || "").trim();
+          const botolText = firstSpkImportValue(row[indexes["BOTOL (MILL)"]]);
           const produksiDusText = String(
             row[indexes["PRODUKSI (DUS)"]] || "",
           ).trim();
@@ -7181,20 +7227,15 @@
             approximateMasterValue("produk", produkText);
           let botol =
             canonicalMasterValue("botol", botolText) ||
+            matchSpkBottleBySize(botolText) ||
             approximateMasterValue("botol", botolText);
           if (!produk) {
             produk = produkText;
-            state.master.produk = [...(state.master.produk || []), produk];
           }
           if (!botolText)
             throw new Error(`Baris ${lineNo}: BOTOL (MILL) kosong.`);
           if (!botol) {
             botol = botolText;
-            state.master.botol = [...(state.master.botol || []), botol];
-            state.master.botolpecah = [
-              ...(state.master.botolpecah || []),
-              botol,
-            ];
           }
           const produksiDus = Math.floor(
             Number(produksiDusText.replace(/[.,\s]/g, "")) || 0,
@@ -7231,9 +7272,6 @@
         if (!imported.length)
           throw new Error("Tidak ada baris SPK untuk diimport.");
         state.preview.spk.push(...imported);
-        try {
-          localStorage.setItem(CONFIG.MASTER_KEY, JSON.stringify(state.master));
-        } catch (_) {}
         state.spk.date = todayStr();
         state.spk.page = 1;
         if (dateFilter) dateFilter.value = state.spk.date;
@@ -7395,10 +7433,15 @@
           renderFillingSpkQueue();
           try {
             await loadAppData();
+            toast(
+              `SPK ${edit.key} dan data Filling/Press terkait berhasil di-update.`,
+            );
           } catch (refreshError) {
-            toast(`SPK tersimpan, tetapi data terbaru gagal dimuat: ${refreshError.message}. Muat ulang halaman.`, true);
+            toast(
+              `SPK tersimpan, tetapi data terbaru gagal dimuat: ${refreshError.message}. Muat ulang halaman.`,
+              true,
+            );
           }
-          toast(`SPK ${edit.key} dan data Filling/Press terkait berhasil di-update.`);
         } catch (err) {
           submitButton.disabled = false;
           return toast(`Gagal meng-update SPK: ${err.message}`, true);
@@ -7603,6 +7646,42 @@
           state.spkEntries = state.spkEntries
             .filter((item) => !savedBatchNos.has(String(item.batchNo)))
             .concat(response.saved);
+          state.master.produk = [
+            ...new Set(
+              [
+                ...(state.master.produk || []),
+                ...response.saved.map((item) =>
+                  String(item.produk || "").trim(),
+                ),
+              ].filter(Boolean),
+            ),
+          ];
+          state.master.botol = [
+            ...new Set(
+              [
+                ...(state.master.botol || []),
+                ...response.saved.map((item) =>
+                  String(item.botol || "").trim(),
+                ),
+              ].filter(Boolean),
+            ),
+          ];
+          state.master.botolpecah = [
+            ...new Set(
+              [
+                ...(state.master.botolpecah || []),
+                ...response.saved.map((item) =>
+                  String(item.botol || "").trim(),
+                ),
+              ].filter(Boolean),
+            ),
+          ];
+          try {
+            localStorage.setItem(
+              CONFIG.MASTER_KEY,
+              JSON.stringify(state.master),
+            );
+          } catch (_) {}
         }
         state.preview.spk = [];
         selectedSpkRows.clear();
@@ -8122,7 +8201,6 @@
     return [...groups.values()].map((group) => {
       const dates = [...group._dates].sort();
       const batches = [...group._batches];
-      group._batchNos = batches;
       const lines = [...group._lines];
       const isFilling = lines.length === 1 && lines[0] === "filling";
       const isPress = lines.length === 1 && lines[0] === "press";
@@ -8132,6 +8210,7 @@
       group.batchNo =
         batches.length <= 1 ? batches[0] || "—" : `${batches.length} batch`;
       group.reportId = group.batchNo;
+      group.batchNumbers = batches;
       const qtyPerCartonValues = [...group._qtyPerCartonValues];
       group.qtyBotolPerKardus =
         qtyPerCartonValues.length === 1 ? qtyPerCartonValues[0] : null;
@@ -8210,7 +8289,7 @@
       .map(
         (e) => `
       <tr>
-        <td><span class="id-badge"${e._batchNos?.length > 1 ? ` title="${esc(`No batch: ${e._batchNos.join(", ")}`)}"` : ""}>${esc(entryBatchNo(e) || e.reportId)}</span></td>
+        <td><span class="id-badge"${e.batchNumbers?.length > 1 ? ` title="${esc("No batch: " + e.batchNumbers.join(", "))}" style="cursor: help"` : ""}>${esc(entryBatchNo(e) || e.reportId)}</span></td>
         <td>${esc(laporanLineLabel(e.tab))}</td>
         <td>${esc(e.tanggal)}</td>
         <td>${esc(e.operator)}</td>
@@ -11522,6 +11601,8 @@
   }
 
   function initUserManagement() {
+    initPasswordToggle("resetPasswordNew");
+    initPasswordToggle("resetPasswordConfirm");
     const form = el("userAddForm");
     const tbody = el("userTbody");
     if (!form || !tbody) return;
@@ -12662,5 +12743,3 @@
       initAppPage();
     });
 })();
-
-// HALO BOSSSS SAYA SUDAH BERUBAH lagi
